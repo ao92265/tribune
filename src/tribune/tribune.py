@@ -445,20 +445,13 @@ def _resolve_panel(name: str) -> Panel:
     return panels[name]
 
 
-def cmd_ask(
+def _convene(
     question: str,
-    context_path: str | None,
+    context: str,
+    panel: Panel,
     out_dir: Path,
-    panel_name: str,
     filename_prefix: str | None = None,
 ) -> int:
-    if not question or not question.strip():
-        _eprint("tribune: question is empty.")
-        return 2
-
-    panel = _resolve_panel(panel_name)
-    context = _read_context(context_path)
-
     try:
         sys.stdout.write(_header(_voice_label(panel.proposer)))
         proposer = _run_voice(
@@ -509,6 +502,77 @@ def cmd_ask(
     )
     sys.stdout.write(f"\n\033[1mWrote:\033[0m {path}\n")
     return 0
+
+
+def cmd_ask(
+    question: str,
+    context_path: str | None,
+    out_dir: Path,
+    panel_name: str,
+    filename_prefix: str | None = None,
+) -> int:
+    if not question or not question.strip():
+        _eprint("tribune: question is empty.")
+        return 2
+    panel = _resolve_panel(panel_name)
+    context = _read_context(context_path)
+    return _convene(question, context, panel, out_dir, filename_prefix)
+
+
+REVIEW_QUESTION = (
+    "Should the following diff be committed as-is, or does it hide a "
+    "regression, a scope-creep, or a failure mode that a maintainer six "
+    "months from now will curse the author for?"
+)
+
+
+def cmd_review(panel_name: str, out_dir: Path, ref: str | None) -> int:
+    if not Path(".git").exists() and not _in_git_repo():
+        _eprint("tribune: not inside a git repository.")
+        return 2
+
+    if ref:
+        diff_cmd = ["git", "show", "--no-color", ref]
+        label = _git_short(ref) or ref
+    else:
+        diff_cmd = ["git", "diff", "--cached", "--no-color"]
+        label = "staged"
+
+    r = subprocess.run(diff_cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        _eprint(f"tribune: git failed: {r.stderr.strip()}")
+        return 1
+    diff = r.stdout
+    if not diff.strip():
+        _eprint("tribune: nothing to review "
+                "(no staged changes; stage with `git add` first, "
+                "or pass --ref HEAD to review a commit).")
+        return 0
+
+    panel = _resolve_panel(panel_name)
+    context = f"Diff under review ({label}):\n\n```diff\n{diff}\n```"
+    return _convene(
+        REVIEW_QUESTION, context, panel, out_dir,
+        filename_prefix=f"review-{label}",
+    )
+
+
+def _in_git_repo() -> bool:
+    r = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        capture_output=True, text=True,
+    )
+    return r.returncode == 0 and r.stdout.strip() == "true"
+
+
+def _git_short(ref: str) -> str | None:
+    r = subprocess.run(
+        ["git", "rev-parse", "--short", ref],
+        capture_output=True, text=True,
+    )
+    if r.returncode == 0:
+        return r.stdout.strip()
+    return None
 
 
 def cmd_panel_list() -> int:
@@ -591,6 +655,18 @@ def main(argv: list[str] | None = None) -> int:
     ask.add_argument("--panel", default="default",
                      help="Panel name (default: default). See `tribune panel list`.")
 
+    review = sub.add_parser(
+        "review",
+        help="Convene a tribune on a git diff (staged, or a given commit).",
+    )
+    review.add_argument("--panel", default="default",
+                        help="Panel name (default: default).")
+    review.add_argument("--out", default="./decisions",
+                        help="Directory to write the ADR.")
+    review.add_argument("--ref", default=None,
+                        help="Review a specific commit (e.g. HEAD). "
+                             "Default: staged changes.")
+
     panel_parser = sub.add_parser("panel", help="Manage panels.")
     panel_sub = panel_parser.add_subparsers(dest="panel_cmd", required=True)
     panel_sub.add_parser("list", help="List available panels.")
@@ -605,6 +681,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "ask":
         return cmd_ask(args.question, args.context, Path(args.out), args.panel)
+    if args.cmd == "review":
+        return cmd_review(args.panel, Path(args.out), args.ref)
     if args.cmd == "panel":
         if args.panel_cmd == "list":
             return cmd_panel_list()

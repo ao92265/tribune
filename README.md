@@ -222,6 +222,29 @@ tribune ask "..." --panel linus
 
 Tribune verifies the TOML parses and the voices are valid before it installs.
 
+## Review a git diff
+
+Convene the panel on code, not just decisions.
+
+```bash
+git add -p                              # stage the changes you want reviewed
+tribune review                          # review staged diff
+tribune review --ref HEAD               # review the last commit
+tribune review --ref HEAD --panel cross-provider
+```
+
+Tribune asks: *"Should this diff be committed as-is, or does it hide a regression, scope-creep, or a failure mode a future maintainer will curse you for?"* Proposer argues ship-it. Skeptic attacks the reasoning. Red Team predicts the bug in six months. Synth picks.
+
+Wire it into your pre-commit hook if you want every commit on the record:
+
+```bash
+#!/bin/sh
+# .git/hooks/pre-commit
+tribune review --out ./decisions || exit 1
+```
+
+Tribune will not install the hook for you. Your repo, your call.
+
 ## Output
 
 A file at `./decisions/YYYY-MM-DD-slugified-question.md`:
@@ -271,6 +294,7 @@ Inspired by the Roman tribunes who spoke for the plebeians against the senate. Y
 - Built-in `default` and `cross-provider` panels.
 - Custom personas via TOML files.
 - Shareable rosters (`tribune panel install <file>`).
+- Git diff review (`tribune review`).
 - ADR file you commit to your repo.
 - Claude Code slash command (`/tribune`).
 
