@@ -1,7 +1,14 @@
-<svg viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Tribune mark">
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 160 160"
+     preserveAspectRatio="xMidYMid meet"
+     role="img" aria-label="Tribune mark">
   <title>Tribune</title>
-  <polygon points="70,15 125,125 15,125" fill="none" stroke="#111111" stroke-width="9" stroke-linejoin="round"/>
-  <circle cx="70"  cy="15"  r="13" fill="#111111"/>
-  <circle cx="15"  cy="125" r="13" fill="#6b7280"/>
-  <circle cx="125" cy="125" r="13" fill="#b91c1c"/>
+  <g transform="translate(10,10)">
+    <polygon points="70,15 130,130 10,130"
+             fill="none" stroke="#111111" stroke-width="9"
+             stroke-linejoin="round"/>
+    <circle cx="70"  cy="15"  r="13" fill="#111111"/>
+    <circle cx="10"  cy="130" r="13" fill="#6b7280"/>
+    <circle cx="130" cy="130" r="13" fill="#b91c1c"/>
+  </g>
 </svg>
