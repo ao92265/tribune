@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tribune-cli"
+version = "0.1.0"
+description = "A panel of advocates for hard decisions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Adam O'Reilly" }]
+keywords = ["adr", "decision", "cli", "anthropic", "claude"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development",
+]
+dependencies = [
+    "anthropic>=0.40.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/ao92265/tribune"
+Repository = "https://github.com/ao92265/tribune"
+
+[project.scripts]
+tribune = "tribune.tribune:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tribune"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/tribune", "README.md", "LICENSE"]
