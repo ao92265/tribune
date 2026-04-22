@@ -1,28 +1,23 @@
-"""Tribune v0 — a panel of advocates for hard decisions."""
+"""Tribune v0 — a panel of advocates for hard decisions.
+
+Shells out to the Claude Code CLI (`claude -p`) so users authenticate with
+their Claude Pro/Max subscription instead of an API key.
+"""
 
 from __future__ import annotations
 
 import argparse
 import datetime as dt
-import os
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
-try:
-    from anthropic import Anthropic, APIError
-except ImportError:
-    sys.stderr.write(
-        "tribune: anthropic SDK not installed. Run: pip install anthropic\n"
-    )
-    sys.exit(2)
-
-
-MODEL_PROPOSER = "claude-opus-4-7"
-MODEL_SKEPTIC = "claude-sonnet-4-6"
-MODEL_RED_TEAM = "claude-opus-4-7"
-MODEL_SYNTH = "claude-opus-4-7"
-MAX_TOKENS = 1600
+MODEL_PROPOSER = "opus"
+MODEL_SKEPTIC = "sonnet"
+MODEL_RED_TEAM = "opus"
+MODEL_SYNTH = "opus"
 
 PROPOSER_PROMPT = """You are the Proposer on a tribune panel.
 
@@ -98,31 +93,58 @@ def _slugify(text: str, max_len: int = 60) -> str:
     return text[:max_len].rstrip("-") or "decision"
 
 
-def _stream(client: Anthropic, model: str, system: str, user: str) -> str:
-    buf: list[str] = []
-    with client.messages.stream(
-        model=model,
-        max_tokens=MAX_TOKENS,
-        system=system,
-        messages=[{"role": "user", "content": user}],
-    ) as stream:
-        for text in stream.text_stream:
-            sys.stdout.write(text)
-            sys.stdout.flush()
-            buf.append(text)
-    sys.stdout.write("\n")
-    return "".join(buf)
+def _find_claude() -> str:
+    path = shutil.which("claude")
+    if not path:
+        _eprint(
+            "tribune: `claude` CLI not found on PATH.\n"
+            "Install Claude Code: https://docs.claude.com/en/docs/claude-code/overview"
+        )
+        sys.exit(2)
+    return path
 
 
-def _complete(client: Anthropic, model: str, system: str, user: str) -> str:
-    resp = client.messages.create(
-        model=model,
-        max_tokens=MAX_TOKENS,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+def _run_claude(
+    claude_bin: str, model: str, system: str, user: str, *, stream: bool
+) -> str:
+    cmd = [
+        claude_bin,
+        "-p",
+        "--model", model,
+        "--append-system-prompt", system,
+    ]
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
     )
-    parts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]
-    return "".join(parts)
+    assert proc.stdin and proc.stdout and proc.stderr
+    proc.stdin.write(user)
+    proc.stdin.close()
+
+    buf: list[str] = []
+    while True:
+        chunk = proc.stdout.read(1)
+        if not chunk:
+            break
+        if stream:
+            sys.stdout.write(chunk)
+            sys.stdout.flush()
+        buf.append(chunk)
+
+    stderr_out = proc.stderr.read()
+    rc = proc.wait()
+    if stream:
+        sys.stdout.write("\n")
+    if rc != 0:
+        _eprint(f"\ntribune: claude exited {rc}.")
+        if stderr_out.strip():
+            _eprint(stderr_out.strip())
+        sys.exit(1)
+    return "".join(buf).strip()
 
 
 def _read_context(path: str | None) -> str:
@@ -199,34 +221,31 @@ def run(question: str, context_path: str | None, out_dir: Path) -> int:
         _eprint("tribune: question is empty.")
         return 2
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        _eprint("tribune: ANTHROPIC_API_KEY is not set.")
-        return 2
-
+    claude_bin = _find_claude()
     context = _read_context(context_path)
-    client = Anthropic(api_key=api_key)
 
     try:
         sys.stdout.write(_header("Proposer"))
-        proposer = _stream(
-            client, MODEL_PROPOSER, PROPOSER_PROMPT,
-            _build_user(question, context),
+        proposer = _run_claude(
+            claude_bin, MODEL_PROPOSER, PROPOSER_PROMPT,
+            _build_user(question, context), stream=True,
         )
 
         sys.stdout.write(_header("Skeptic"))
-        skeptic = _stream(
-            client, MODEL_SKEPTIC, SKEPTIC_PROMPT,
+        skeptic = _run_claude(
+            claude_bin, MODEL_SKEPTIC, SKEPTIC_PROMPT,
             _build_user(question, context, prior={"Proposer": proposer}),
+            stream=True,
         )
 
         sys.stdout.write(_header("Red Team"))
-        red_team = _stream(
-            client, MODEL_RED_TEAM, RED_TEAM_PROMPT,
+        red_team = _run_claude(
+            claude_bin, MODEL_RED_TEAM, RED_TEAM_PROMPT,
             _build_user(question, context, prior={
                 "Proposer": proposer,
                 "Skeptic": skeptic,
             }),
+            stream=True,
         )
 
         sys.stdout.write(_header("Verdict"))
@@ -235,11 +254,9 @@ def run(question: str, context_path: str | None, out_dir: Path) -> int:
             "Skeptic": skeptic,
             "Red Team": red_team,
         })
-        synthesis = _complete(client, MODEL_SYNTH, SYNTH_PROMPT, synth_user)
-        sys.stdout.write(synthesis.strip() + "\n")
-    except APIError as e:
-        _eprint(f"\ntribune: API error: {e}")
-        return 1
+        synthesis = _run_claude(
+            claude_bin, MODEL_SYNTH, SYNTH_PROMPT, synth_user, stream=True,
+        )
     except KeyboardInterrupt:
         _eprint("\ntribune: interrupted.")
         return 130

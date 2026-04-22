@@ -1,0 +1,13 @@
+<svg viewBox="0 0 440 140" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Tribune">
+  <title>Tribune</title>
+  <g transform="translate(20,20)">
+    <polygon points="55,10 100,100 10,100" fill="none" stroke="#111111" stroke-width="7" stroke-linejoin="round"/>
+    <circle cx="55"  cy="10"  r="11" fill="#111111"/>
+    <circle cx="10"  cy="100" r="11" fill="#6b7280"/>
+    <circle cx="100" cy="100" r="11" fill="#b91c1c"/>
+  </g>
+  <text x="150" y="92"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="58" font-weight="700"
+        fill="#111111" letter-spacing="3">TRIBUNE</text>
+</svg>
