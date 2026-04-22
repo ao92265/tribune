@@ -169,6 +169,8 @@ A **panel** is the roster of voices Tribune convenes. You can use a built-in pan
 | `default` | Claude Opus (Proposer, Red Team, Synth) + Claude Sonnet (Skeptic). |
 | `cross-provider` | Claude Proposer + **Codex** Skeptic + **Gemini** Red Team + Claude synth. Genuine provider divergence. |
 
+> **Streaming:** Claude and Gemini voices stream token-by-token. The Codex voice captures its final message cleanly (codex stdout is too noisy to stream raw), so expect a pause before the Codex block appears — then the full response in one burst.
+
 List, inspect, and install:
 
 ```bash
@@ -254,6 +256,7 @@ A file at `./decisions/YYYY-MM-DD-slugified-question.md`:
 
 Date: 2026-04-22
 Status: proposed
+Panel: default
 
 ## Question
 Should Wraith use Postgres or SQLite for the audit log?
@@ -263,13 +266,13 @@ _No context provided._
 
 ## Panel
 
-### Proposer
+### Proposer — claude:opus
 Use Postgres. The audit log will be queried by compliance reviewers ...
 
-### Skeptic
+### Skeptic — claude:sonnet
 The Proposer assumes the compliance query pattern exists. Today there is ...
 
-### Red Team
+### Red Team — claude:opus
 This fails when the ops team doesn't budget a Postgres instance ...
 
 ## Verdict
@@ -278,6 +281,8 @@ Use Postgres, but only after the first real compliance query lands ...
 ## Minority report
 "The Proposer assumes the compliance query pattern exists."
 ```
+
+Each advocate's header records the CLI and model used — so when you come back to the ADR in six months, you know exactly which voice said what.
 
 ## Why
 
