@@ -35,14 +35,18 @@ The logo is the panel. Each vertex is a voice.
 
 ## Install
 
-Tribune uses **your Claude Pro/Max subscription**, not an API key. It shells out to the [Claude Code CLI](https://docs.claude.com/en/docs/claude-code/overview).
+Tribune uses **your AI CLI subscriptions**, not API keys. Each voice shells out to whichever CLI the panel specifies.
 
 ```bash
-# 1. Install Claude Code (one-time)
-#    https://docs.claude.com/en/docs/claude-code/overview
+# Required: Claude Code (used by the default panel)
+# https://docs.claude.com/en/docs/claude-code/overview
 claude --version
 
-# 2. Install Tribune
+# Optional: Codex CLI + Gemini CLI (needed for --panel cross-provider)
+codex --version
+gemini --version
+
+# Install Tribune
 pip install tribune-cli
 ```
 
@@ -54,11 +58,33 @@ No `ANTHROPIC_API_KEY` required. No billing surprises.
 tribune ask "Should we migrate the audit log to Postgres or keep SQLite?"
 tribune ask "Which auth library for the new service?" --context ./notes.md
 tribune ask "Kill or keep the batch import feature?" --out ./adr
+
+# Pick a panel (see Panels below)
+tribune ask "..." --panel cross-provider
+tribune ask "..." --panel linus
 ```
 
 Three advocates speak in turn, streamed live. When they're done, Tribune writes a markdown ADR to `./decisions/` with the verdict and the strongest unresolved objection.
 
 Commit it. Review it in six months. See whether the Red Team was right.
+
+## Inside Claude Code
+
+Convene a tribune without leaving your Claude Code session. Copy the slash command into your global commands directory:
+
+```bash
+mkdir -p ~/.claude/commands
+curl -fsSL https://raw.githubusercontent.com/ao92265/tribune/main/.claude/commands/tribune.md \
+  -o ~/.claude/commands/tribune.md
+```
+
+Then from any Claude Code session:
+
+```
+/tribune Should we migrate the audit log to Postgres or keep SQLite?
+```
+
+Claude will shell out to `tribune ask`, stream the three advocates, and offer to commit the ADR.
 
 ## How it works
 
@@ -132,6 +158,70 @@ stateDiagram-v2
     vindicated --> [*]
 ```
 
+## Panels
+
+A **panel** is the roster of voices Tribune convenes. You can use a built-in panel, write your own, or install someone else's.
+
+### Built-in
+
+| Name | Voices |
+|---|---|
+| `default` | Claude Opus (Proposer, Red Team, Synth) + Claude Sonnet (Skeptic). |
+| `cross-provider` | Claude Proposer + **Codex** Skeptic + **Gemini** Red Team + Claude synth. Genuine provider divergence. |
+
+List, inspect, and install:
+
+```bash
+tribune panel list
+tribune panel show default
+tribune panel install ./examples/panels/linus.toml
+```
+
+### Custom personas
+
+Panels are TOML files. Drop them in `~/.config/tribune/panels/` or `./.tribune/panels/` and Tribune picks them up. Minimal shape:
+
+```toml
+name = "linus"
+description = "Principled-engineer trio."
+
+[proposer]
+bin = "claude"          # one of: claude | codex | gemini
+model = "opus"          # optional; CLI default if omitted
+system = """
+You are an experienced kernel maintainer ...
+"""
+
+[skeptic]
+bin = "claude"
+model = "sonnet"
+system = """..."""
+
+[red_team]
+bin = "claude"
+model = "opus"
+system = """..."""
+
+[synth]
+bin = "claude"
+model = "opus"
+system = """..."""
+```
+
+See [`examples/panels/linus.toml`](examples/panels/linus.toml) for a full working example.
+
+### Shareable rosters
+
+A panel is one file. Share it like any file:
+
+```bash
+# Someone sends you linus.toml or you find it in a repo
+tribune panel install ./linus.toml
+tribune ask "..." --panel linus
+```
+
+Tribune verifies the TOML parses and the voices are valid before it installs.
+
 ## Output
 
 A file at `./decisions/YYYY-MM-DD-slugified-question.md`:
@@ -174,21 +264,25 @@ Every serious decision needs a dissent. Tribune forces it.
 
 Inspired by the Roman tribunes who spoke for the plebeians against the senate. Your advocate, on the record.
 
-## What's in v0
+## What's in
 
-Three hardcoded advocates. One question at a time. Markdown output. Claude subscription auth. That's it.
+- Three advocates on every decision. Synthesis writes the verdict.
+- Subscription auth via `claude` / `codex` / `gemini` CLIs. No API keys.
+- Built-in `default` and `cross-provider` panels.
+- Custom personas via TOML files.
+- Shareable rosters (`tribune panel install <file>`).
+- ADR file you commit to your repo.
+- Claude Code slash command (`/tribune`).
 
-## What's not in v0, deliberately
+## What's not in Tribune, deliberately
 
-- Custom personas
-- Shareable rosters
-- Multi-provider advocates (Claude + Codex + Gemini panels) — [tracked as v1](https://github.com/ao92265/tribune/issues)
-- Git hooks
-- Web UI
-- Hosted service
-- Telemetry
+These aren't roadmap items. They're design decisions.
 
-If v0 gets run a second time by real users without being asked, v1 happens. If not, Tribune stays small and honest.
+- **No web UI.** Tribune is a decision instrument, not a chatbot.
+- **No hosted service.** Your decisions belong in your repo, not someone else's database.
+- **No telemetry.** Tribune never phones home. Your questions are yours.
+
+Anything in this list would be a different product.
 
 ## License
 

@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tribune-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "A panel of advocates for hard decisions."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Adam O'Reilly" }]
 keywords = ["adr", "decision", "cli", "anthropic", "claude"]
@@ -16,9 +16,9 @@ classifiers = [
     "Environment :: Console",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development",
 ]
 dependencies = []
