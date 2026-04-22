@@ -248,7 +248,11 @@ def _run_codex(bin_path: str, voice: Voice, user: str, *, stream: bool) -> str:
     tf.close()
     tmp = Path(tf.name)
     try:
-        cmd = [bin_path, "exec", "--output-last-message", str(tmp)]
+        cmd = [
+            bin_path, "exec",
+            "--skip-git-repo-check",
+            "--output-last-message", str(tmp),
+        ]
         if voice.model:
             cmd += ["-c", f"model={voice.model}"]
         prompt = f"[ROLE]\n{voice.system}\n\n[TASK]\n{user}"
