@@ -19,7 +19,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 
 PROPOSER_PROMPT = """You are the Proposer on a tribune panel.
@@ -507,6 +507,7 @@ def _convene(
     rounds: int = 1,
     auto: bool = False,
     max_rounds: int = 5,
+    no_adr: bool = False,
 ) -> int:
     cap = max(1, max_rounds if auto else rounds)
     history: list[tuple[str, str, str]] = []
@@ -597,6 +598,12 @@ def _convene(
         _eprint("\ntribune: interrupted.")
         return 130
 
+    if no_adr:
+        sys.stdout.write(
+            "\n\033[1mADR skipped\033[0m (--no-adr). Verdict printed above.\n"
+        )
+        return 0
+
     path = _write_adr(
         question=question,
         context=context,
@@ -621,6 +628,7 @@ def cmd_ask(
     rounds: int = 1,
     auto: bool = False,
     max_rounds: int = 5,
+    no_adr: bool = False,
 ) -> int:
     if not question or not question.strip():
         _eprint("tribune: question is empty.")
@@ -629,7 +637,7 @@ def cmd_ask(
     context = _read_context(context_path)
     return _convene(
         question, context, panel, out_dir, filename_prefix,
-        rounds=rounds, auto=auto, max_rounds=max_rounds,
+        rounds=rounds, auto=auto, max_rounds=max_rounds, no_adr=no_adr,
     )
 
 
@@ -648,6 +656,7 @@ def cmd_review(
     rounds: int = 1,
     auto: bool = False,
     max_rounds: int = 5,
+    no_adr: bool = False,
 ) -> int:
     if not Path(".git").exists() and not _in_git_repo():
         _eprint("tribune: not inside a git repository.")
@@ -676,7 +685,7 @@ def cmd_review(
     return _convene(
         REVIEW_QUESTION, context, panel, out_dir,
         filename_prefix=f"review-{label}",
-        rounds=rounds, auto=auto, max_rounds=max_rounds,
+        rounds=rounds, auto=auto, max_rounds=max_rounds, no_adr=no_adr,
     )
 
 
@@ -794,6 +803,8 @@ def main(argv: list[str] | None = None) -> int:
                      help="Directory to write the ADR (default: ./decisions).")
     ask.add_argument("--panel", default="default",
                      help="Panel name (default: default). See `tribune panel list`.")
+    ask.add_argument("--no-adr", action="store_true",
+                     help="Do not write an ADR file; print verdict only.")
     _add_round_args(ask)
 
     review = sub.add_parser(
@@ -807,6 +818,8 @@ def main(argv: list[str] | None = None) -> int:
     review.add_argument("--ref", default=None,
                         help="Review a specific commit (e.g. HEAD). "
                              "Default: staged changes.")
+    review.add_argument("--no-adr", action="store_true",
+                        help="Do not write an ADR file; print verdict only.")
     _add_round_args(review)
 
     panel_parser = sub.add_parser("panel", help="Manage panels.")
@@ -825,11 +838,13 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_ask(
             args.question, args.context, Path(args.out), args.panel,
             rounds=args.rounds, auto=args.auto, max_rounds=args.max_rounds,
+            no_adr=args.no_adr,
         )
     if args.cmd == "review":
         return cmd_review(
             args.panel, Path(args.out), args.ref,
             rounds=args.rounds, auto=args.auto, max_rounds=args.max_rounds,
+            no_adr=args.no_adr,
         )
     if args.cmd == "panel":
         if args.panel_cmd == "list":
