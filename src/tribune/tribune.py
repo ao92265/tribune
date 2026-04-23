@@ -63,6 +63,25 @@ Rules:
 - No hedging. Commit to a specific failure scenario.
 """
 
+JUDGE_PROMPT = """You are the Judge on a tribune panel.
+
+A round has just finished: Proposer revised (or opened), Skeptic critiqued, Red Team predicted failure. Decide whether reasoning has stabilized.
+
+Rules:
+- First line: exactly STABLE or CONTINUE. Nothing else on that line.
+- Then one short sentence. Why stable, or what live reasoning defect justifies another round.
+- STABLE = Skeptic's strongest objection is addressed or conceded; no new weak link surfaced; Red Team prediction acknowledged.
+- CONTINUE = a material reasoning defect remains that a further Proposer revision could change.
+- No preamble. No other output.
+"""
+
+REVISION_BRIEF = """REVISION BRIEF:
+This is a follow-up round. Prior Proposer argument, Skeptic critique, and Red Team failure prediction are above. Revise your answer:
+- Address the Skeptic's strongest points. Concede where they're right.
+- If you stand by your answer, give a better reason, not the same one louder.
+- Same length cap, same format.
+"""
+
 SYNTH_PROMPT = """You are writing the Verdict section of an ADR (Architecture Decision Record).
 
 You have the Question, Context, Proposer argument, Skeptic critique, and Red Team failure prediction.
@@ -365,14 +384,27 @@ def _read_context(path: str | None) -> str:
 
 
 def _build_user(
-    question: str, context: str, *, prior: dict[str, str] | None = None
+    question: str,
+    context: str,
+    *,
+    prior: dict[str, str] | None = None,
+    history: list[tuple[str, str, str]] | None = None,
+    revising: bool = False,
 ) -> str:
     parts = [f"QUESTION:\n{question}"]
     if context:
         parts.append(f"\nCONTEXT:\n{context}")
+    if history:
+        for idx, (p, s, r) in enumerate(history, start=1):
+            parts.append(
+                f"\n── Round {idx} transcript ──"
+                f"\n[Proposer]\n{p}\n\n[Skeptic]\n{s}\n\n[Red Team]\n{r}"
+            )
     if prior:
         for name, text in prior.items():
             parts.append(f"\n── {name} said ──\n{text}")
+    if revising:
+        parts.append(f"\n{REVISION_BRIEF}")
     return "\n".join(parts)
 
 
@@ -386,12 +418,11 @@ def _write_adr(
     question: str,
     context: str,
     panel: Panel,
-    proposer: str,
-    skeptic: str,
-    red_team: str,
+    rounds: list[tuple[str, str, str]],
     synthesis: str,
     out_dir: Path,
     filename_prefix: str | None = None,
+    stopped_reason: str | None = None,
 ) -> Path:
     today = dt.date.today().isoformat()
     slug = _slugify(question)
@@ -400,37 +431,39 @@ def _write_adr(
     path = out_dir / f"{today}-{prefix}{slug}.md"
 
     title = question.strip().rstrip("?.")
-    body = f"""# Decision: {title}
+    header = f"""# Decision: {title}
 
 Date: {today}
 Status: proposed
 Panel: {panel.name}
+Rounds: {len(rounds)}"""
+    if stopped_reason:
+        header += f"\nStop reason: {stopped_reason}"
 
-## Question
+    body_parts = [header, "", "## Question", "", question.strip(), "",
+                  "## Context", "",
+                  context.strip() if context else "_No context provided._", ""]
 
-{question.strip()}
+    if len(rounds) == 1:
+        p, s, r = rounds[0]
+        body_parts += [
+            "## Panel", "",
+            f"### {_voice_label(panel.proposer)}", "", p.strip(), "",
+            f"### {_voice_label(panel.skeptic)}", "", s.strip(), "",
+            f"### {_voice_label(panel.red_team)}", "", r.strip(), "",
+        ]
+    else:
+        body_parts += ["## Rounds", ""]
+        for idx, (p, s, r) in enumerate(rounds, start=1):
+            body_parts += [
+                f"### Round {idx}", "",
+                f"#### {_voice_label(panel.proposer)}", "", p.strip(), "",
+                f"#### {_voice_label(panel.skeptic)}", "", s.strip(), "",
+                f"#### {_voice_label(panel.red_team)}", "", r.strip(), "",
+            ]
 
-## Context
-
-{context.strip() if context else "_No context provided._"}
-
-## Panel
-
-### {_voice_label(panel.proposer)}
-
-{proposer.strip()}
-
-### {_voice_label(panel.skeptic)}
-
-{skeptic.strip()}
-
-### {_voice_label(panel.red_team)}
-
-{red_team.strip()}
-
-{synthesis.strip()}
-"""
-    path.write_text(body, encoding="utf-8")
+    body_parts += [synthesis.strip(), ""]
+    path.write_text("\n".join(body_parts), encoding="utf-8")
     return path
 
 
@@ -449,44 +482,115 @@ def _resolve_panel(name: str) -> Panel:
     return panels[name]
 
 
+def _judge_voice(panel: Panel) -> Voice:
+    # Reuse synth bin/model for the Judge so providers match.
+    return Voice(
+        role="Judge",
+        bin=panel.synth.bin,
+        model=panel.synth.model,
+        system=JUDGE_PROMPT,
+    )
+
+
+def _judge_stable(verdict: str) -> bool:
+    first = (verdict.strip().splitlines() or [""])[0].strip().upper()
+    return first.startswith("STABLE")
+
+
 def _convene(
     question: str,
     context: str,
     panel: Panel,
     out_dir: Path,
     filename_prefix: str | None = None,
+    *,
+    rounds: int = 1,
+    auto: bool = False,
+    max_rounds: int = 5,
 ) -> int:
+    cap = max(1, max_rounds if auto else rounds)
+    history: list[tuple[str, str, str]] = []
+    stopped_reason: str | None = None
+
     try:
-        sys.stdout.write(_header(_voice_label(panel.proposer)))
-        proposer = _run_voice(
-            panel.proposer, _build_user(question, context), stream=True
-        )
+        for i in range(cap):
+            round_no = i + 1
+            revising = bool(history)
+            round_tag = f"Round {round_no}/{cap}" if cap > 1 else None
 
-        sys.stdout.write(_header(_voice_label(panel.skeptic)))
-        skeptic = _run_voice(
-            panel.skeptic,
-            _build_user(question, context, prior={"Proposer": proposer}),
-            stream=True,
-        )
+            def h(label: str) -> str:
+                return _header(f"{round_tag} — {label}" if round_tag else label)
 
-        sys.stdout.write(_header(_voice_label(panel.red_team)))
-        red_team = _run_voice(
-            panel.red_team,
-            _build_user(question, context, prior={
-                "Proposer": proposer,
-                "Skeptic": skeptic,
-            }),
-            stream=True,
-        )
+            sys.stdout.write(h(_voice_label(panel.proposer)))
+            proposer = _run_voice(
+                panel.proposer,
+                _build_user(
+                    question, context, history=history, revising=revising
+                ),
+                stream=True,
+            )
 
+            sys.stdout.write(h(_voice_label(panel.skeptic)))
+            skeptic = _run_voice(
+                panel.skeptic,
+                _build_user(
+                    question, context,
+                    history=history,
+                    prior={"Proposer": proposer},
+                ),
+                stream=True,
+            )
+
+            sys.stdout.write(h(_voice_label(panel.red_team)))
+            red_team = _run_voice(
+                panel.red_team,
+                _build_user(
+                    question, context,
+                    history=history,
+                    prior={"Proposer": proposer, "Skeptic": skeptic},
+                ),
+                stream=True,
+            )
+
+            history.append((proposer, skeptic, red_team))
+
+            if auto and round_no < cap:
+                judge = _judge_voice(panel)
+                sys.stdout.write(h(_voice_label(judge)))
+                verdict = _run_voice(
+                    judge,
+                    _build_user(
+                        question, context,
+                        prior={
+                            "Proposer": proposer,
+                            "Skeptic": skeptic,
+                            "Red Team": red_team,
+                        },
+                    ),
+                    stream=True,
+                )
+                if _judge_stable(verdict):
+                    stopped_reason = f"Judge STABLE after round {round_no}"
+                    break
+
+        if auto and stopped_reason is None:
+            stopped_reason = f"max-rounds cap ({cap}) reached"
+        elif not auto and cap > 1:
+            stopped_reason = f"fixed rounds ({cap})"
+
+        final_p, final_s, final_r = history[-1]
         sys.stdout.write(_header(_voice_label(panel.synth)))
         synthesis = _run_voice(
             panel.synth,
-            _build_user(question, context, prior={
-                "Proposer": proposer,
-                "Skeptic": skeptic,
-                "Red Team": red_team,
-            }),
+            _build_user(
+                question, context,
+                history=history[:-1] if len(history) > 1 else None,
+                prior={
+                    "Proposer": final_p,
+                    "Skeptic": final_s,
+                    "Red Team": final_r,
+                },
+            ),
             stream=True,
         )
     except KeyboardInterrupt:
@@ -497,12 +601,11 @@ def _convene(
         question=question,
         context=context,
         panel=panel,
-        proposer=proposer,
-        skeptic=skeptic,
-        red_team=red_team,
+        rounds=history,
         synthesis=synthesis,
         out_dir=out_dir,
         filename_prefix=filename_prefix,
+        stopped_reason=stopped_reason,
     )
     sys.stdout.write(f"\n\033[1mWrote:\033[0m {path}\n")
     return 0
@@ -514,13 +617,20 @@ def cmd_ask(
     out_dir: Path,
     panel_name: str,
     filename_prefix: str | None = None,
+    *,
+    rounds: int = 1,
+    auto: bool = False,
+    max_rounds: int = 5,
 ) -> int:
     if not question or not question.strip():
         _eprint("tribune: question is empty.")
         return 2
     panel = _resolve_panel(panel_name)
     context = _read_context(context_path)
-    return _convene(question, context, panel, out_dir, filename_prefix)
+    return _convene(
+        question, context, panel, out_dir, filename_prefix,
+        rounds=rounds, auto=auto, max_rounds=max_rounds,
+    )
 
 
 REVIEW_QUESTION = (
@@ -530,7 +640,15 @@ REVIEW_QUESTION = (
 )
 
 
-def cmd_review(panel_name: str, out_dir: Path, ref: str | None) -> int:
+def cmd_review(
+    panel_name: str,
+    out_dir: Path,
+    ref: str | None,
+    *,
+    rounds: int = 1,
+    auto: bool = False,
+    max_rounds: int = 5,
+) -> int:
     if not Path(".git").exists() and not _in_git_repo():
         _eprint("tribune: not inside a git repository.")
         return 2
@@ -558,6 +676,7 @@ def cmd_review(panel_name: str, out_dir: Path, ref: str | None) -> int:
     return _convene(
         REVIEW_QUESTION, context, panel, out_dir,
         filename_prefix=f"review-{label}",
+        rounds=rounds, auto=auto, max_rounds=max_rounds,
     )
 
 
@@ -642,6 +761,23 @@ def cmd_panel_install(src: str) -> int:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _add_round_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--rounds", type=int, default=1,
+        help="Fixed number of Proposer→Skeptic→Red Team rounds "
+             "before the Verdict (default: 1).",
+    )
+    p.add_argument(
+        "--auto", action="store_true",
+        help="Iterate rounds until a Judge voice replies STABLE, "
+             "capped by --max-rounds.",
+    )
+    p.add_argument(
+        "--max-rounds", type=int, default=5,
+        help="Cap when --auto is set (default: 5). Ignored otherwise.",
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="tribune",
@@ -658,6 +794,7 @@ def main(argv: list[str] | None = None) -> int:
                      help="Directory to write the ADR (default: ./decisions).")
     ask.add_argument("--panel", default="default",
                      help="Panel name (default: default). See `tribune panel list`.")
+    _add_round_args(ask)
 
     review = sub.add_parser(
         "review",
@@ -670,6 +807,7 @@ def main(argv: list[str] | None = None) -> int:
     review.add_argument("--ref", default=None,
                         help="Review a specific commit (e.g. HEAD). "
                              "Default: staged changes.")
+    _add_round_args(review)
 
     panel_parser = sub.add_parser("panel", help="Manage panels.")
     panel_sub = panel_parser.add_subparsers(dest="panel_cmd", required=True)
@@ -684,9 +822,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.cmd == "ask":
-        return cmd_ask(args.question, args.context, Path(args.out), args.panel)
+        return cmd_ask(
+            args.question, args.context, Path(args.out), args.panel,
+            rounds=args.rounds, auto=args.auto, max_rounds=args.max_rounds,
+        )
     if args.cmd == "review":
-        return cmd_review(args.panel, Path(args.out), args.ref)
+        return cmd_review(
+            args.panel, Path(args.out), args.ref,
+            rounds=args.rounds, auto=args.auto, max_rounds=args.max_rounds,
+        )
     if args.cmd == "panel":
         if args.panel_cmd == "list":
             return cmd_panel_list()
