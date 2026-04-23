@@ -16,14 +16,16 @@ Stream the output verbatim (all three advocates plus the verdict) so the user se
 
 Do not paraphrase the advocates. Do not re-summarise the verdict. The whole point is that each voice speaks on the record, verbatim.
 
-If `tribune` is not found on PATH, offer to install it automatically. Run whichever is available:
+If `tribune` is not found on PATH, offer to install it automatically. Ask the user first, then run whichever works:
 
 ```bash
 pip install tribune-cli
 # or
 pip3 install tribune-cli
+# If not on PyPI yet, install direct from GitHub:
+pip install git+https://github.com/ao92265/tribune.git
 ```
 
-Ask the user before installing. After install, re-run the original command.
+After install, re-run the original command.
 
 Also confirm Claude Code is on the PATH (tribune shells out to `claude -p`).

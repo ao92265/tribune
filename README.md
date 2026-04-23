@@ -48,6 +48,9 @@ gemini --version
 
 # Install Tribune
 pip install tribune-cli
+
+# Not on PyPI yet? Install direct from GitHub:
+pip install git+https://github.com/ao92265/tribune.git
 ```
 
 No `ANTHROPIC_API_KEY` required. No billing surprises.
