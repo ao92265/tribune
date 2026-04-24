@@ -65,11 +65,32 @@ tribune ask "Kill or keep the batch import feature?" --out ./adr
 # Pick a panel (see Panels below)
 tribune ask "..." --panel cross-provider
 tribune ask "..." --panel linus
+
+# Iterate rounds
+tribune ask "..." --rounds 3               # fixed: three Proposer→Skeptic→Red Team rounds
+tribune ask "..." --auto                   # iterate until a Judge voice replies STABLE
+tribune ask "..." --auto --max-rounds 8    # cap auto-iteration (default: 5)
+
+# Print verdict to stdout instead of writing an ADR
+tribune ask "..." --no-adr
 ```
 
 Three advocates speak in turn, streamed live. When they're done, Tribune writes a markdown ADR to `./decisions/` with the verdict and the strongest unresolved objection.
 
 Commit it. Review it in six months. See whether the Red Team was right.
+
+### Iterate until stable
+
+By default each voice speaks once. For harder decisions, add more rounds:
+
+- `--rounds N` — run N sequential Proposer→Skeptic→Red Team rounds before synthesis. Each round sees the full prior transcript.
+- `--auto` — after each round, a **Judge** voice reads the transcript and decides whether the panel has converged. When the Judge replies `STABLE`, Tribune stops and synthesises the verdict. Capped by `--max-rounds` (default 5) so it cannot run forever.
+
+The Judge is a fourth voice that reuses the panel's synth bin/model. It never appears in the ADR — it only decides when to stop. Use `--auto` when you don't know up front how many rounds the question needs.
+
+### Skip the ADR
+
+`--no-adr` prints the full transcript and verdict to stdout and does **not** write a file. Useful when you want a second opinion in-session and don't want `./decisions/` to grow. The Claude Code `/tribune` slash command passes this by default so the breakdown stays in chat.
 
 ## Inside Claude Code
 
@@ -303,6 +324,8 @@ Inspired by the Roman tribunes who spoke for the plebeians against the senate. Y
 - Custom personas via TOML files.
 - Shareable rosters (`tribune panel install <file>`).
 - Git diff review (`tribune review`).
+- Fixed rounds (`--rounds N`) or Judge-driven iteration until stable (`--auto`).
+- Print-only mode (`--no-adr`) for in-session second opinions.
 - ADR file you commit to your repo.
 - Claude Code slash command (`/tribune`).
 
