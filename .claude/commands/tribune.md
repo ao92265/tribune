@@ -9,12 +9,20 @@ You are the user's assistant, not the tribune itself. The tribune is a separate 
 Run:
 
 ```bash
+tribune ask --no-adr "$ARGUMENTS"
+```
+
+`--no-adr` keeps the tribune in chat — it prints the three advocates plus the verdict to stdout and does not write an ADR file. Stream the output verbatim so the user sees every voice on the record.
+
+Do not paraphrase the advocates. Do not re-summarise the verdict. The whole point is that each voice speaks on the record, verbatim.
+
+If the user explicitly asks for an ADR on disk (e.g. "commit the decision", "write the ADR"), re-run without `--no-adr`:
+
+```bash
 tribune ask "$ARGUMENTS"
 ```
 
-Stream the output verbatim (all three advocates plus the verdict) so the user sees it. After it finishes, tribune prints a line like `Wrote: decisions/YYYY-MM-DD-slug.md`. Read that file and offer to commit it to the user's repo if they want — but do not commit without explicit confirmation.
-
-Do not paraphrase the advocates. Do not re-summarise the verdict. The whole point is that each voice speaks on the record, verbatim.
+Tribune will then write `decisions/YYYY-MM-DD-slug.md`. Offer to commit it — but never commit without explicit confirmation.
 
 If tribune is not installed, tell the user to install it:
 
