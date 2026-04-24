@@ -24,10 +24,16 @@ tribune ask "$ARGUMENTS"
 
 Tribune will then write `decisions/YYYY-MM-DD-slug.md`. Offer to commit it — but never commit without explicit confirmation.
 
-If tribune is not installed, tell the user to install it:
+If `tribune` is not found on PATH, offer to install it automatically. Ask the user first, then run whichever works:
 
 ```bash
 pip install tribune-cli
+# or
+pip3 install tribune-cli
+# If not on PyPI yet, install direct from GitHub:
+pip install git+https://github.com/ao92265/tribune.git
 ```
 
-And that Claude Code must be on the PATH (tribune shells out to `claude -p`).
+After install, re-run the original command.
+
+Also confirm Claude Code is on the PATH (tribune shells out to `claude -p`).
